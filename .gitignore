@@ -1,0 +1,25 @@
+# This file prevents unnecessary files from being uploaded to Github
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment variables
+.env
+
+# VSCode
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Data files
+data/
+reports/
