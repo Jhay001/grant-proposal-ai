@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
-print(f"API key imported successfully {api_key}") #test API key import 
+print("API key imported successfully") #test API key import 
 
 # Importing the Gemini AI SDK
 from google import genai
