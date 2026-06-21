@@ -6,16 +6,13 @@ from dotenv import load_dotenv
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
-print("API key imported successfully") #test API key import 
-
 # Importing the Gemini AI SDK
 from google import genai
-# Declare a client
-client = genai.Client()
+client = genai.Client()  # Declare a client
 
 # Declare response
 response = client.models.generate_content(
     model = "gemini-2.5-flash",
-    contents = "Give me a warm welcome to using you"
+    contents = input('Enter your prompt: ')
 )
-print(response.text) #view response
+print(response.text)    #view response
