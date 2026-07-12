@@ -21,10 +21,21 @@ Pipeline:
             |
     scoring_engine.score_proposal()
             |
-    Final evaluation dictionary
+    generate_html.generate_html_report()
+            |
+    generate_pdf.generate_pdf_report()
+            |
+    {
+        "evaluation": <final evaluation dict>,
+        "html_report": <path to generated HTML report>,
+        "pdf_report": <path to generated PDF report>,
+    }
 
-NOTE: The reporting stages (generate_html.py and generate_pdf.py) are not
-yet implemented and are deliberately NOT called from this module.
+This module is the single integration point for the whole pipeline,
+including report generation. Callers — including the Gradio UI in
+src/ui/app.py — only ever need to call evaluate_proposal() once and receive
+back the scored evaluation together with both report file paths, rather
+than orchestrating the reporting stages themselves.
 
 NAMING NOTE:
 gemini_evaluator.py already exposes a function named `evaluate_proposal`
@@ -67,6 +78,14 @@ from gemini_evaluator import (  # noqa: E402
 from scoring_engine import (  # noqa: E402
     score_proposal,
     ScoringEngineError,
+)
+from generate_html import (  # noqa: E402
+    generate_html_report,
+    HtmlReportError,
+)
+from generate_pdf import (  # noqa: E402
+    generate_pdf_report,
+    PdfReportError,
 )
 
 # ---------------------------------------------------------------------------
@@ -114,6 +133,14 @@ class ScoringPipelineError(PipelineError):
     """Raised when scoring_engine.score_proposal() fails."""
 
 
+class HtmlReportPipelineError(PipelineError):
+    """Raised when generate_html.generate_html_report() fails."""
+
+
+class PdfReportPipelineError(PipelineError):
+    """Raised when generate_pdf.generate_pdf_report() fails."""
+
+
 # ---------------------------------------------------------------------------
 # Logging setup
 # ---------------------------------------------------------------------------
@@ -159,10 +186,12 @@ def evaluate_proposal(pdf_path: str) -> dict[str, Any]:
     """Run the complete grant proposal evaluation pipeline for one PDF.
 
     Coordinates, in strict order:
-        1. process_proposal.process_proposal()  — validate/extract/clean/embed.
-        2. retrieve_context.retrieve_context()   — retrieve donor context, build prompt.
-        3. gemini_evaluator.evaluate_proposal()  — send prompt to Gemini, parse/validate JSON.
-        4. scoring_engine.score_proposal()       — compute weighted score and classification.
+        1. process_proposal.process_proposal()   — validate/extract/clean/embed.
+        2. retrieve_context.retrieve_context()    — retrieve donor context, build prompt.
+        3. gemini_evaluator.evaluate_proposal()   — send prompt to Gemini, parse/validate JSON.
+        4. scoring_engine.score_proposal()        — compute weighted score and classification.
+        5. generate_html.generate_html_report()   — render the scored evaluation to HTML.
+        6. generate_pdf.generate_pdf_report()     — convert that HTML report to PDF.
 
     If any stage fails, the pipeline stops immediately — later stages are
     never called with a partial or missing result from an earlier one.
@@ -171,10 +200,19 @@ def evaluate_proposal(pdf_path: str) -> dict[str, Any]:
         pdf_path: Full path (as a string) to the proposal PDF to evaluate.
 
     Returns:
-        The final evaluation dictionary produced by scoring_engine.py,
-        containing proposal_summary, funding_alignment_analysis,
-        criteria_scores, strengths, weaknesses, risk_flags,
-        final_recommendation, overall_score, and classification.
+        A dictionary:
+            {
+                "evaluation": dict,   # the final evaluation dictionary
+                                      # produced by scoring_engine.py
+                                      # (proposal_summary,
+                                      # funding_alignment_analysis,
+                                      # criteria_scores, strengths,
+                                      # weaknesses, risk_flags,
+                                      # final_recommendation,
+                                      # overall_score, classification)
+                "html_report": str,  # full path to the generated HTML report
+                "pdf_report": str,   # full path to the generated PDF report
+            }
 
     Raises:
         ProposalFileNotFoundError: If pdf_path does not point to an
@@ -188,6 +226,8 @@ def evaluate_proposal(pdf_path: str) -> dict[str, Any]:
             response, schema validation failure).
         ScoringPipelineError: If the scoring stage fails (malformed
             criteria_scores reaching this stage).
+        HtmlReportPipelineError: If HTML report generation fails.
+        PdfReportPipelineError: If PDF report generation fails.
     """
     pipeline_start_time = time.perf_counter()
     pdf_path_obj = Path(pdf_path)
@@ -293,6 +333,48 @@ def evaluate_proposal(pdf_path: str) -> dict[str, Any]:
         ) from exc
 
     # -----------------------------------------------------------------
+    # Stage 5 — HTML report generation
+    # -----------------------------------------------------------------
+    try:
+        html_report_path = generate_html_report(final_result)
+        logger.info("HTML report generated: %s", html_report_path)
+    except HtmlReportError as exc:
+        logger.error("HTML report generation FAILED.\n%s", traceback.format_exc())
+        raise HtmlReportPipelineError(
+            f"HTML report generation failed for '{pdf_path_obj.name}': {exc}"
+        ) from exc
+    except Exception as exc:
+        logger.error(
+            "HTML report generation FAILED with an unexpected error.\n%s",
+            traceback.format_exc(),
+        )
+        raise HtmlReportPipelineError(
+            f"Unexpected error during HTML report generation for "
+            f"'{pdf_path_obj.name}': {exc}"
+        ) from exc
+
+    # -----------------------------------------------------------------
+    # Stage 6 — PDF report generation
+    # -----------------------------------------------------------------
+    try:
+        pdf_report_path = generate_pdf_report(html_report_path)
+        logger.info("PDF report generated: %s", pdf_report_path)
+    except PdfReportError as exc:
+        logger.error("PDF report generation FAILED.\n%s", traceback.format_exc())
+        raise PdfReportPipelineError(
+            f"PDF report generation failed for '{pdf_path_obj.name}': {exc}"
+        ) from exc
+    except Exception as exc:
+        logger.error(
+            "PDF report generation FAILED with an unexpected error.\n%s",
+            traceback.format_exc(),
+        )
+        raise PdfReportPipelineError(
+            f"Unexpected error during PDF report generation for "
+            f"'{pdf_path_obj.name}': {exc}"
+        ) from exc
+
+    # -----------------------------------------------------------------
     # Pipeline complete
     # -----------------------------------------------------------------
     total_elapsed_seconds = time.perf_counter() - pipeline_start_time
@@ -308,7 +390,11 @@ def evaluate_proposal(pdf_path: str) -> dict[str, Any]:
         status="SUCCESS",
     )
 
-    return final_result
+    return {
+        "evaluation": final_result,
+        "html_report": html_report_path,
+        "pdf_report": pdf_report_path,
+    }
 
 
 # ---------------------------------------------------------------------------
