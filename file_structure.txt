@@ -19,36 +19,18 @@ Grant-Proposal-Evaluation-System/
 │   │
 │   ├── chunks/
 │   │
-│   ├── embeddings/
-│   │
 │   └── vectordb/
 │
 │
 ├── proposals/
 │
-│   ├── uploads/
-│   │
-│   ├── extracted/
-│   │
-│   ├── cleaned/
-│   │
-│   └── evaluations/
-│
-│
-├── reports/
-│
-│   ├── pdf/
-│   │
-│   └── html/
-│
 │
 ├── logs/
 │
 │   ├── extraction_logs/
-│   │
 │   ├── retrieval_logs/
-│   │
-│   └── evaluation_logs/
+│   ├── evaluation_logs/
+│   └── proposal_processing.log
 │
 │
 ├── src/
@@ -58,131 +40,25 @@ Grant-Proposal-Evaluation-System/
 │   │   ├── extract_donor_docs.py
 │   │   ├── clean_donor_docs.py
 │   │   ├── chunk_donor_docs.py
-│   │   ├── generate_embeddings.py
-│   │   └── build_vectordb.py
+│   │   └── generate_embeddings.py
 │   │
 │   │
-│   ├── proposal_pipeline/
+│   ├── proposal_evaluation/
 │   │
-│   │   ├── extract_proposal.py
-│   │   ├── clean_proposal.py
-│   │   └── preprocess_proposal.py
-│   │
-│   │
-│   ├── retrieval/
-│   │
+│   │   ├── process_proposal.py
 │   │   ├── retrieve_context.py
-│   │   └── rank_context.py
-│   │
-│   │
-│   ├── evaluation/
-│   │
-│   │   ├── prompt_builder.py
 │   │   ├── gemini_evaluator.py
 │   │   ├── scoring_engine.py
-│   │   └── json_parser.py
-│   │
-│   │
-│   ├── reporting/
-│   │
-│   │   ├── generate_pdf.py
-│   │   └── generate_html.py
+│   │   ├── generate_html.py
+│   │   └── generate_pdf.py
 │   │
 │   │
 │   └── ui/
-│
+│       │
 │       └── app.py
 │
-│
-├── tests/
-│
-│   ├── test_extraction.py
-│   ├── test_chunking.py
-│   ├── test_retrieval.py
-│   ├── test_evaluation.py
-│   └── test_reporting.py
-│
-│
 ├── requirements.txt
-│
 ├── README.md
-│
 ├── .env
-│
 ├── .gitignore
-│
 └── main.py
-
-
-Module 1
-
-Knowledge Base Creation
-
-Donor PDFs
-    ↓
-Extract
-    ↓
-Chunk
-    ↓
-Embed
-    ↓
-Store
-
-Files:
-src/donor_pipeline/
-
-
-Module 2
-
-Proposal Processing
-
-Proposal PDF
-      ↓
-Extract
-      ↓
-Clean
-
-Files:
-src/proposal_pipeline/
-
-
-Module 3
-
-Retrieval
-
-Proposal
-      ↓
-Vector Search
-      ↓
-Relevant Donor Context
-
-Files:
-src/retrieval/
-
-
-Module 4
-
-Evaluation
-
-Proposal
-      +
-Retrieved Context
-      ↓
-Gemini
-      ↓
-Structured JSON
-
-Files:
-src/evaluation/
-
-
-Module 5
-
-Reporting
-
-JSON
-    ↓
-PDF
-
-Files:
-src/reporting/
