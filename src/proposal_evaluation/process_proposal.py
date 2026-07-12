@@ -27,8 +27,8 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
-import fitz  # PyMuPDF
-from sentence_transformers import SentenceTransformer
+import fitz  # type: ignore # PyMuPDF
+from sentence_transformers import SentenceTransformer # type: ignore
 
 # ---------------------------------------------------------------------------
 # Constants
