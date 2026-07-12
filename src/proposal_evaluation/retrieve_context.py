@@ -24,7 +24,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-import chromadb
+import chromadb # type: ignore
 
 # ---------------------------------------------------------------------------
 # Constants
