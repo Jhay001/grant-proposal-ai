@@ -10,12 +10,15 @@ or score calculation itself. Its only job is to:
     1. Accept a proposal PDF upload from the user.
     2. Call main.evaluate_proposal(pdf_path) — the single integration point
        for the entire backend pipeline (proposal processing, retrieval,
-       Gemini evaluation, scoring, and both HTML/PDF report generation).
+       Gemini evaluation, scoring, and PDF report generation).
     3. Display the returned results.
-    4. Offer the already-generated HTML and PDF reports for download.
+    4. Offer the already-generated PDF report for download.
 
-No report is regenerated in this module — the HTML and PDF report paths
-returned by main.evaluate_proposal() are used directly.
+No report is regenerated in this module — the PDF report path returned by
+main.evaluate_proposal() is used directly. The PDF report is the only
+report artifact this system produces; there is no HTML report anywhere in
+this application, and this module is the application's only other
+presentation layer besides that PDF.
 """
 
 from __future__ import annotations
@@ -50,13 +53,26 @@ from main import (  # noqa: E402
     ContextRetrievalError,
     GeminiEvaluationPipelineError,
     ScoringPipelineError,
-    HtmlReportPipelineError,
     PdfReportPipelineError,
 )
 
 # ---------------------------------------------------------------------------
-# Constants
+# Brand identity
 # ---------------------------------------------------------------------------
+
+# The same navy/gold palette used across every other artifact this system
+# produces (the GIF donor knowledge base documents and the PDF evaluation
+# report), so the UI reads as part of one coherent system rather than a
+# visually unrelated demo shell bolted on top of the backend.
+NAVY = "#1B3A5C"
+NAVY_DARK = "#122A44"
+GOLD = "#B8862B"
+GOLD_LIGHT = "#E0BC6C"
+INK = "#1F2937"
+INK_SOFT = "#5A6472"
+PAGE_BG = "#F4F6F8"
+CARD_BG = "#FFFFFF"
+BORDER = "#E2E6EA"
 
 APP_TITLE = "AI Powered Grant Proposal Evaluation System"
 APP_SUBTITLE = (
@@ -66,7 +82,7 @@ APP_SUBTITLE = (
 
 # Display order and labels for the Evaluation Scores dataframe, kept as a
 # single source of truth here so the table's row order matches the order
-# specified for the report (Relevance, Feasibility, Innovation,
+# used in the PDF report (Relevance, Feasibility, Innovation,
 # Sustainability, Budget Justification, Organizational Capacity, Expected
 # Impact) regardless of key order in the underlying criteria_scores dict.
 CRITERIA_DISPLAY_ORDER: tuple[tuple[str, str], ...] = (
@@ -79,9 +95,9 @@ CRITERIA_DISPLAY_ORDER: tuple[tuple[str, str], ...] = (
     ("expected_impact", "Expected Impact"),
 )
 
-# Colours for the classification badge, matching the palette used in
-# generate_html.py so the UI and the downloadable reports present the
-# proposal's classification consistently.
+# Colours for the classification badge, matching the palette used in the
+# PDF report (generate_pdf.py) so a proposal's classification reads
+# consistently across every artifact a reviewer might see.
 CLASSIFICATION_COLOURS: dict[str, dict[str, str]] = {
     "Highly Recommended": {"bg": "#E9F6EC", "text": "#155A26", "border": "#1E7A34"},
     "Recommended": {"bg": "#EAF1FB", "text": "#154A94", "border": "#1D5DBF"},
@@ -92,6 +108,145 @@ _DEFAULT_CLASSIFICATION_COLOUR = {"bg": "#EEF0F2", "text": "#3E454E", "border": 
 
 LOG_DIR = Path("logs/system_logs")
 LOG_FILE = LOG_DIR / "ui.log"
+
+
+# ---------------------------------------------------------------------------
+# Custom theme
+# ---------------------------------------------------------------------------
+
+def _build_theme() -> gr.themes.Base:
+    """Build the custom navy/gold Gradio theme used by this application.
+
+    Rather than a stock Gradio theme (whose default orange/blue palette
+    has no connection to this system's identity), this defines the
+    project's own navy/gold brand as first-class theme colours, so
+    buttons, focus states, and accents all derive from the same palette
+    used throughout the donor documents and the PDF report — not just the
+    hand-styled badges layered on top via custom CSS.
+
+    Returns:
+        A configured gr.themes.Base instance.
+    """
+    navy_scale = gr.themes.Color(
+        c50="#EAF0F6", c100="#D3E0EC", c200="#A8C2D9", c300="#7CA3C6",
+        c400="#4E7EA8", c500="#2C5A85", c600=NAVY, c700="#152E49",
+        c800="#102237", c900="#0B1826", c950="#060D15",
+    )
+    gold_scale = gr.themes.Color(
+        c50="#FBF6EC", c100="#F5E9CE", c200="#EBD39D", c300=GOLD_LIGHT,
+        c400="#CFA149", c500=GOLD, c600="#93691F", c700="#6E4E17",
+        c800="#4A340F", c900="#251A08", c950="#130D04",
+    )
+
+    return gr.themes.Base(
+        primary_hue=navy_scale,
+        secondary_hue=gold_scale,
+        neutral_hue=gr.themes.colors.slate,
+        font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "sans-serif"],
+        font_mono=[gr.themes.GoogleFont("JetBrains Mono"), "ui-monospace", "monospace"],
+    ).set(
+        body_background_fill=PAGE_BG,
+        block_background_fill=CARD_BG,
+        block_border_color=BORDER,
+        block_border_width="1px",
+        block_radius="14px",
+        block_shadow="0 1px 3px rgba(16, 24, 40, 0.06)",
+        block_label_text_color=INK_SOFT,
+        block_title_text_color=NAVY,
+        button_primary_background_fill=NAVY,
+        button_primary_background_fill_hover=NAVY_DARK,
+        button_primary_text_color="#FFFFFF",
+        button_secondary_background_fill="#FFFFFF",
+        button_secondary_border_color=GOLD,
+        button_secondary_text_color=NAVY,
+        input_border_color=BORDER,
+        input_border_color_focus=NAVY,
+    )
+
+
+# Custom CSS layered on top of the theme for the elements Gradio's theming
+# system does not directly expose: the header banner, the section-card
+# accent rule, and typography for the report-style headings inside the
+# results panel. Kept self-contained (no external stylesheet) and scoped
+# with specific elem_classes/elem_id selectors to avoid the generic
+# type-vs-class specificity collisions the frontend-design guidance warns
+# against.
+CUSTOM_CSS = f"""
+#gif-header-banner {{
+    background: linear-gradient(135deg, {NAVY} 0%, {NAVY_DARK} 100%);
+    border-radius: 16px;
+    padding: 28px 32px 22px 32px;
+    margin-bottom: 18px;
+    border-bottom: 3px solid {GOLD};
+}}
+#gif-header-banner h1 {{
+    font-family: 'Source Serif 4', Georgia, serif;
+    color: #FFFFFF !important;
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 6px 0;
+    letter-spacing: 0.01em;
+}}
+#gif-header-banner p {{
+    color: #D9E2EC !important;
+    font-size: 14.5px;
+    margin: 0;
+}}
+
+.gif-section-card {{
+    border-radius: 14px !important;
+}}
+
+.gif-section-title {{
+    font-family: 'Source Serif 4', Georgia, serif;
+    color: {NAVY} !important;
+    font-size: 15px;
+    font-weight: 700;
+    border-bottom: 2px solid {GOLD};
+    padding-bottom: 6px;
+    margin-bottom: 10px !important;
+    display: inline-block;
+}}
+
+#gif-score-hero {{
+    text-align: center;
+    padding: 6px 0 2px 0;
+}}
+#gif-score-hero .gif-score-value {{
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 42px;
+    font-weight: 800;
+    line-height: 1.1;
+}}
+#gif-score-hero .gif-score-label {{
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: {INK_SOFT};
+    margin-bottom: 2px;
+}}
+
+.gif-badge {{
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 13.5px;
+    border: 1.5px solid;
+}}
+
+#gif-status-box textarea {{
+    font-weight: 600;
+    color: {NAVY};
+}}
+
+.gif-footer-note {{
+    text-align: center;
+    color: {INK_SOFT};
+    font-size: 12px;
+    margin-top: 6px;
+}}
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -160,11 +315,6 @@ _FRIENDLY_ERROR_MESSAGES: tuple[tuple[type[Exception], str], ...] = (
         "or contact support if the issue persists.",
     ),
     (
-        HtmlReportPipelineError,
-        "The evaluation completed, but the HTML report could not be "
-        "generated. Please try again or contact support.",
-    ),
-    (
         PdfReportPipelineError,
         "The evaluation completed, but the PDF report could not be "
         "generated. Please try again or contact support.",
@@ -207,40 +357,43 @@ def _friendly_error_message(exc: Exception) -> str:
 # Result formatting helpers
 # ---------------------------------------------------------------------------
 
-def _format_score_badge(overall_score: float) -> str:
-    """Render the overall score as a Markdown heading.
+def _format_score_badge(overall_score: float, classification: str) -> str:
+    """Render the overall score as a large, classification-coloured figure.
 
     Args:
         overall_score: The overall weighted score (0-100).
+        classification: The classification label, used to colour the
+            score figure consistently with the classification badge.
 
     Returns:
-        A Markdown string displaying the score prominently.
+        An HTML string (rendered inside a gr.HTML component) showing the
+        score prominently.
     """
-    return f"## {overall_score:.2f}%"
+    colours = CLASSIFICATION_COLOURS.get(classification, _DEFAULT_CLASSIFICATION_COLOUR)
+    return (
+        f'<div id="gif-score-hero">'
+        f'<div class="gif-score-label">Overall Score</div>'
+        f'<div class="gif-score-value" style="color:{colours["border"]};">'
+        f"{overall_score:.2f}%</div></div>"
+    )
 
 
 def _format_classification_badge(classification: str) -> str:
-    """Render the classification as a coloured Markdown/HTML badge.
-
-    Gradio's Markdown component renders embedded HTML, which is used here
-    to apply the classification-specific background/text/border colours
-    (Highly Recommended = green, Recommended = blue, Needs Revision =
-    orange, Not Recommended = red) without requiring a custom component.
+    """Render the classification as a coloured badge.
 
     Args:
         classification: The classification label returned by the pipeline.
 
     Returns:
-        An HTML string (to be rendered inside a gr.Markdown component)
-        showing the classification as a coloured pill/badge.
+        An HTML string (rendered inside a gr.HTML component) showing the
+        classification as a coloured pill/badge.
     """
     colours = CLASSIFICATION_COLOURS.get(classification, _DEFAULT_CLASSIFICATION_COLOUR)
     return (
-        f'<span style="display:inline-block; padding:6px 16px; '
-        f'border-radius:999px; font-weight:700; font-size:14px; '
-        f'background-color:{colours["bg"]}; color:{colours["text"]}; '
-        f'border:1.5px solid {colours["border"]};">'
-        f"{classification}</span>"
+        f'<div style="text-align:center; padding-top:8px;">'
+        f'<span class="gif-badge" style="background-color:{colours["bg"]}; '
+        f'color:{colours["text"]}; border-color:{colours["border"]};">'
+        f"{classification}</span></div>"
     )
 
 
@@ -276,10 +429,6 @@ def _build_scores_dataframe(criteria_scores: dict[str, int]) -> list[list[Any]]:
     ]
 
 
-# ---------------------------------------------------------------------------
-# Empty / initial UI state
-# ---------------------------------------------------------------------------
-
 def _empty_scores_dataframe() -> list[list[Any]]:
     """Return placeholder dataframe rows for the initial, pre-evaluation UI state."""
     return [[label, ""] for _key, label in CRITERIA_DISPLAY_ORDER]
@@ -289,9 +438,7 @@ def _empty_scores_dataframe() -> list[list[Any]]:
 # Callback
 # ---------------------------------------------------------------------------
 
-def handle_evaluate_click(
-    pdf_file: Any,
-) -> tuple[Any, ...]:
+def handle_evaluate_click(pdf_file: Any) -> tuple[Any, ...]:
     """Handle a click of the "Evaluate Proposal" button.
 
     This is the only place in the UI that calls into the backend, via
@@ -311,14 +458,14 @@ def handle_evaluate_click(
         they are wired in the Blocks definition below:
             (status, score_badge, classification_badge, proposal_summary,
              funding_alignment, scores_dataframe, strengths, weaknesses,
-             risk_flags, html_download, pdf_download, evaluate_button)
+             risk_flags, pdf_download, evaluate_button)
     """
     # --- No file uploaded -------------------------------------------------
     if not pdf_file:
         logger.info("Evaluate clicked with no file uploaded.")
         return (
             "Please upload a proposal PDF before evaluating.",
-            "## —",
+            "",
             "",
             "",
             "",
@@ -326,7 +473,6 @@ def handle_evaluate_click(
             "",
             "",
             "",
-            gr.update(value=None, visible=False),
             gr.update(value=None, visible=False),
             gr.update(interactive=True),
         )
@@ -348,7 +494,7 @@ def handle_evaluate_click(
         friendly_message = _friendly_error_message(exc)
         return (
             f"Error: {friendly_message}",
-            "## —",
+            "",
             "",
             "",
             "",
@@ -357,12 +503,10 @@ def handle_evaluate_click(
             "",
             "",
             gr.update(value=None, visible=False),
-            gr.update(value=None, visible=False),
             gr.update(interactive=True),
         )
 
     evaluation = result["evaluation"]
-    html_report_path = result["html_report"]
     pdf_report_path = result["pdf_report"]
 
     overall_score = evaluation["overall_score"]
@@ -375,26 +519,21 @@ def handle_evaluate_click(
         classification,
     )
 
-    # --- Missing report files on disk --------------------------------------
-    # main.evaluate_proposal() only returns these paths after generate_html.py
-    # / generate_pdf.py have already succeeded, so this is a defensive check
+    # --- Missing report file on disk ----------------------------------------
+    # main.evaluate_proposal() only returns this path after
+    # generate_pdf.py has already succeeded, so this is a defensive check
     # against the file having been deleted or moved between generation and
     # this point, rather than an expected failure mode.
-    html_exists = Path(html_report_path).exists()
     pdf_exists = Path(pdf_report_path).exists()
-    if not html_exists or not pdf_exists:
+    if not pdf_exists:
         logger.error(
-            "Report file(s) missing after successful evaluation. "
-            "HTML exists=%s (%s), PDF exists=%s (%s).",
-            html_exists,
-            html_report_path,
-            pdf_exists,
+            "PDF report file missing after successful evaluation. Path: %s",
             pdf_report_path,
         )
 
     return (
         "Completed.",
-        _format_score_badge(overall_score),
+        _format_score_badge(overall_score, classification),
         _format_classification_badge(classification),
         evaluation["proposal_summary"],
         evaluation["funding_alignment_analysis"],
@@ -402,7 +541,6 @@ def handle_evaluate_click(
         _format_list_as_lines(evaluation["strengths"], "No strengths identified."),
         _format_list_as_lines(evaluation["weaknesses"], "No weaknesses identified."),
         _format_list_as_lines(evaluation["risk_flags"], "No significant risks identified."),
-        gr.update(value=html_report_path if html_exists else None, visible=html_exists),
         gr.update(value=pdf_report_path if pdf_exists else None, visible=pdf_exists),
         gr.update(interactive=True),
     )
@@ -432,64 +570,87 @@ def build_app() -> gr.Blocks:
     Returns:
         The fully wired gr.Blocks app, ready to be launched.
     """
-    with gr.Blocks(title=APP_TITLE) as demo:
-        gr.Markdown(f"# {APP_TITLE}")
-        gr.Markdown(APP_SUBTITLE)
+    theme = _build_theme()
+
+    with gr.Blocks(title=APP_TITLE, theme=theme, css=CUSTOM_CSS) as demo:
+        gr.HTML(
+            f'<div id="gif-header-banner">'
+            f"<h1>{APP_TITLE}</h1>"
+            f"<p>{APP_SUBTITLE}</p>"
+            f"</div>"
+        )
 
         with gr.Row():
             # -----------------------------------------------------------
             # Left panel — upload, evaluate, status
             # -----------------------------------------------------------
             with gr.Column(scale=1):
-                pdf_upload = gr.File(
-                    label="Upload Proposal PDF",
-                    file_types=[".pdf"],
-                    type="filepath",
-                )
-                evaluate_button = gr.Button("Evaluate Proposal", variant="primary")
-                status_box = gr.Textbox(
-                    label="Evaluation Status",
-                    value="Waiting for upload...",
-                    interactive=False,
-                )
+                with gr.Group(elem_classes=["gif-section-card"]):
+                    gr.Markdown("Submit a Proposal", elem_classes=["gif-section-title"])
+                    pdf_upload = gr.File(
+                        label="Upload Proposal PDF",
+                        file_types=[".pdf"],
+                        type="filepath",
+                    )
+                    evaluate_button = gr.Button("Evaluate Proposal", variant="primary")
+                    status_box = gr.Textbox(
+                        label="Evaluation Status",
+                        value="Waiting for upload...",
+                        interactive=False,
+                        elem_id="gif-status-box",
+                    )
 
             # -----------------------------------------------------------
             # Right panel — results
             # -----------------------------------------------------------
             with gr.Column(scale=2):
-                with gr.Row():
-                    score_badge = gr.Markdown("## —", label="Overall Score")
-                    classification_badge = gr.Markdown("", label="Classification")
-
-                proposal_summary_box = gr.Textbox(
-                    label="Proposal Summary", lines=5, interactive=False
-                )
-                funding_alignment_box = gr.Textbox(
-                    label="Funding Alignment Analysis", lines=5, interactive=False
-                )
-                scores_dataframe = gr.Dataframe(
-                    headers=["Criterion", "Score"],
-                    value=_empty_scores_dataframe(),
-                    label="Evaluation Scores",
-                    interactive=False,
-                )
-                strengths_box = gr.Textbox(
-                    label="Strengths", lines=4, interactive=False
-                )
-                weaknesses_box = gr.Textbox(
-                    label="Weaknesses", lines=4, interactive=False
-                )
-                risk_flags_box = gr.Textbox(
-                    label="Risk Flags", lines=4, interactive=False
-                )
-
-                with gr.Row():
-                    html_download = gr.DownloadButton(
-                        label="Download HTML Report", visible=False
-                    )
+                with gr.Group(elem_classes=["gif-section-card"]):
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            score_badge = gr.HTML("")
+                        with gr.Column(scale=1):
+                            classification_badge = gr.HTML("")
                     pdf_download = gr.DownloadButton(
-                        label="Download PDF Report", visible=False
+                        label="Download PDF Report", visible=False, variant="secondary"
                     )
+
+                with gr.Group(elem_classes=["gif-section-card"]):
+                    gr.Markdown("Executive Summary", elem_classes=["gif-section-title"])
+                    proposal_summary_box = gr.Textbox(
+                        show_label=False, lines=5, interactive=False
+                    )
+
+                with gr.Group(elem_classes=["gif-section-card"]):
+                    gr.Markdown("Funding Alignment Analysis", elem_classes=["gif-section-title"])
+                    funding_alignment_box = gr.Textbox(
+                        show_label=False, lines=5, interactive=False
+                    )
+
+                with gr.Group(elem_classes=["gif-section-card"]):
+                    gr.Markdown("Evaluation Scores", elem_classes=["gif-section-title"])
+                    scores_dataframe = gr.Dataframe(
+                        headers=["Criterion", "Score"],
+                        value=_empty_scores_dataframe(),
+                        interactive=False,
+                    )
+
+                with gr.Group(elem_classes=["gif-section-card"]):
+                    gr.Markdown("Strengths", elem_classes=["gif-section-title"])
+                    strengths_box = gr.Textbox(show_label=False, lines=4, interactive=False)
+
+                with gr.Group(elem_classes=["gif-section-card"]):
+                    gr.Markdown("Weaknesses", elem_classes=["gif-section-title"])
+                    weaknesses_box = gr.Textbox(show_label=False, lines=4, interactive=False)
+
+                with gr.Group(elem_classes=["gif-section-card"]):
+                    gr.Markdown("Risk Flags", elem_classes=["gif-section-title"])
+                    risk_flags_box = gr.Textbox(show_label=False, lines=4, interactive=False)
+
+        gr.HTML(
+            '<div class="gif-footer-note">'
+            "Generated by the AI Powered Grant Proposal Evaluation System."
+            "</div>"
+        )
 
         # -----------------------------------------------------------------
         # Wiring: two-step click chain so the UI updates immediately
@@ -514,7 +675,6 @@ def build_app() -> gr.Blocks:
                 strengths_box,
                 weaknesses_box,
                 risk_flags_box,
-                html_download,
                 pdf_download,
                 evaluate_button,
             ],
