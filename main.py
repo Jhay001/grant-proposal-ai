@@ -21,21 +21,22 @@ Pipeline:
             |
     scoring_engine.score_proposal()
             |
-    generate_html.generate_html_report()
-            |
     generate_pdf.generate_pdf_report()
             |
     {
         "evaluation": <final evaluation dict>,
-        "html_report": <path to generated HTML report>,
         "pdf_report": <path to generated PDF report>,
     }
 
 This module is the single integration point for the whole pipeline,
 including report generation. Callers — including the Gradio UI in
 src/ui/app.py — only ever need to call evaluate_proposal() once and receive
-back the scored evaluation together with both report file paths, rather
-than orchestrating the reporting stages themselves.
+back the scored evaluation together with the PDF report path, rather than
+orchestrating report generation themselves.
+
+The PDF report is the ONLY report artifact this system produces. There is
+no HTML report generation anywhere in this pipeline; the Gradio UI is the
+application's only other presentation layer.
 
 NAMING NOTE:
 gemini_evaluator.py already exposes a function named `evaluate_proposal`
@@ -74,14 +75,11 @@ from retrieve_context import retrieve_context  # noqa: E402
 from gemini_evaluator import (  # noqa: E402
     evaluate_proposal as run_gemini_evaluation,
     GeminiEvaluationError,
+    GEMINI_MODEL_NAME,
 )
 from scoring_engine import (  # noqa: E402
     score_proposal,
     ScoringEngineError,
-)
-from generate_html import (  # noqa: E402
-    generate_html_report,
-    HtmlReportError,
 )
 from generate_pdf import (  # noqa: E402
     generate_pdf_report,
@@ -131,10 +129,6 @@ class GeminiEvaluationPipelineError(PipelineError):
 
 class ScoringPipelineError(PipelineError):
     """Raised when scoring_engine.score_proposal() fails."""
-
-
-class HtmlReportPipelineError(PipelineError):
-    """Raised when generate_html.generate_html_report() fails."""
 
 
 class PdfReportPipelineError(PipelineError):
@@ -190,8 +184,7 @@ def evaluate_proposal(pdf_path: str) -> dict[str, Any]:
         2. retrieve_context.retrieve_context()    — retrieve donor context, build prompt.
         3. gemini_evaluator.evaluate_proposal()   — send prompt to Gemini, parse/validate JSON.
         4. scoring_engine.score_proposal()        — compute weighted score and classification.
-        5. generate_html.generate_html_report()   — render the scored evaluation to HTML.
-        6. generate_pdf.generate_pdf_report()     — convert that HTML report to PDF.
+        5. generate_pdf.generate_pdf_report()     — render the scored evaluation directly to PDF.
 
     If any stage fails, the pipeline stops immediately — later stages are
     never called with a partial or missing result from an earlier one.
@@ -210,7 +203,6 @@ def evaluate_proposal(pdf_path: str) -> dict[str, Any]:
                                       # weaknesses, risk_flags,
                                       # final_recommendation,
                                       # overall_score, classification)
-                "html_report": str,  # full path to the generated HTML report
                 "pdf_report": str,   # full path to the generated PDF report
             }
 
@@ -226,7 +218,6 @@ def evaluate_proposal(pdf_path: str) -> dict[str, Any]:
             response, schema validation failure).
         ScoringPipelineError: If the scoring stage fails (malformed
             criteria_scores reaching this stage).
-        HtmlReportPipelineError: If HTML report generation fails.
         PdfReportPipelineError: If PDF report generation fails.
     """
     pipeline_start_time = time.perf_counter()
@@ -333,31 +324,23 @@ def evaluate_proposal(pdf_path: str) -> dict[str, Any]:
         ) from exc
 
     # -----------------------------------------------------------------
-    # Stage 5 — HTML report generation
+    # Stage 5 — PDF report generation
     # -----------------------------------------------------------------
+    # generate_pdf.py renders directly from the evaluation dictionary, so
+    # it needs a few processing-metadata fields that aren't part of
+    # scoring_engine.py's output: the proposal's filename and the
+    # embedding model name both come from proposal_data (Stage 1's
+    # output); the LLM name is read from gemini_evaluator's own
+    # GEMINI_MODEL_NAME constant (imported above) rather than being added
+    # to gemini_evaluator.py's return schema, since that module is not to
+    # be modified.
     try:
-        html_report_path = generate_html_report(final_result)
-        logger.info("HTML report generated: %s", html_report_path)
-    except HtmlReportError as exc:
-        logger.error("HTML report generation FAILED.\n%s", traceback.format_exc())
-        raise HtmlReportPipelineError(
-            f"HTML report generation failed for '{pdf_path_obj.name}': {exc}"
-        ) from exc
-    except Exception as exc:
-        logger.error(
-            "HTML report generation FAILED with an unexpected error.\n%s",
-            traceback.format_exc(),
+        pdf_report_path = generate_pdf_report(
+            evaluation=final_result,
+            proposal_filename=proposal_data.get("filename", pdf_path_obj.name),
+            embedding_model=proposal_data.get("embedding_model", "unknown"),
+            llm_model=GEMINI_MODEL_NAME,
         )
-        raise HtmlReportPipelineError(
-            f"Unexpected error during HTML report generation for "
-            f"'{pdf_path_obj.name}': {exc}"
-        ) from exc
-
-    # -----------------------------------------------------------------
-    # Stage 6 — PDF report generation
-    # -----------------------------------------------------------------
-    try:
-        pdf_report_path = generate_pdf_report(html_report_path)
         logger.info("PDF report generated: %s", pdf_report_path)
     except PdfReportError as exc:
         logger.error("PDF report generation FAILED.\n%s", traceback.format_exc())
@@ -392,7 +375,6 @@ def evaluate_proposal(pdf_path: str) -> dict[str, Any]:
 
     return {
         "evaluation": final_result,
-        "html_report": html_report_path,
         "pdf_report": pdf_report_path,
     }
 
