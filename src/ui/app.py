@@ -138,14 +138,17 @@ def _build_theme() -> gr.themes.Base:
         c800="#4A340F", c900="#251A08", c950="#130D04",
     )
 
-    return gr.themes.Base(
+    theme = gr.themes.Base(
         primary_hue=navy_scale,
         secondary_hue=gold_scale,
         neutral_hue=gr.themes.colors.slate,
         font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "sans-serif"],
         font_mono=[gr.themes.GoogleFont("JetBrains Mono"), "ui-monospace", "monospace"],
     ).set(
+        # Light-mode values.
         body_background_fill=PAGE_BG,
+        background_fill_primary=CARD_BG,
+        background_fill_secondary=PAGE_BG,
         block_background_fill=CARD_BG,
         block_border_color=BORDER,
         block_border_width="1px",
@@ -153,15 +156,58 @@ def _build_theme() -> gr.themes.Base:
         block_shadow="0 1px 3px rgba(16, 24, 40, 0.06)",
         block_label_text_color=INK_SOFT,
         block_title_text_color=NAVY,
+        body_text_color=INK,
+        body_text_color_subdued=INK_SOFT,
         button_primary_background_fill=NAVY,
         button_primary_background_fill_hover=NAVY_DARK,
         button_primary_text_color="#FFFFFF",
         button_secondary_background_fill="#FFFFFF",
         button_secondary_border_color=GOLD,
         button_secondary_text_color=NAVY,
+        input_background_fill="#FFFFFF",
         input_border_color=BORDER,
         input_border_color_focus=NAVY,
+        panel_background_fill=PAGE_BG,
+        table_even_background_fill=CARD_BG,
+        table_odd_background_fill="#F7F9FB",
+        table_border_color=BORDER,
+        table_text_color=INK,
+        # Dark-mode counterparts are pinned to the SAME values as light mode.
+        # This system's colours (navy/gold/white cards on a light page) were
+        # specifically designed to match the donor documents and PDF report;
+        # letting Gradio silently swap to its own dark palette when a
+        # reviewer's OS/browser prefers dark mode would break that
+        # consistency and — as observed — can also produce illegible
+        # text/background colour combinations where custom CSS hardcodes a
+        # colour intended for a light background. Pinning every _dark
+        # variant to the light value makes the app's appearance
+        # deterministic regardless of the viewer's system preference.
+        body_background_fill_dark=PAGE_BG,
+        background_fill_primary_dark=CARD_BG,
+        background_fill_secondary_dark=PAGE_BG,
+        block_background_fill_dark=CARD_BG,
+        block_border_color_dark=BORDER,
+        block_shadow_dark="0 1px 3px rgba(16, 24, 40, 0.06)",
+        block_label_text_color_dark=INK_SOFT,
+        block_title_text_color_dark=NAVY,
+        body_text_color_dark=INK,
+        body_text_color_subdued_dark=INK_SOFT,
+        button_primary_background_fill_dark=NAVY,
+        button_primary_background_fill_hover_dark=NAVY_DARK,
+        button_primary_text_color_dark="#FFFFFF",
+        button_secondary_background_fill_dark="#FFFFFF",
+        button_secondary_border_color_dark=GOLD,
+        button_secondary_text_color_dark=NAVY,
+        input_background_fill_dark="#FFFFFF",
+        input_border_color_dark=BORDER,
+        input_border_color_focus_dark=NAVY,
+        panel_background_fill_dark=PAGE_BG,
+        table_even_background_fill_dark=CARD_BG,
+        table_odd_background_fill_dark="#F7F9FB",
+        table_border_color_dark=BORDER,
+        table_text_color_dark=INK,
     )
+    return theme
 
 
 # Custom CSS layered on top of the theme for the elements Gradio's theming
@@ -172,6 +218,75 @@ def _build_theme() -> gr.themes.Base:
 # type-vs-class specificity collisions the frontend-design guidance warns
 # against.
 CUSTOM_CSS = f"""
+/* ---------------------------------------------------------------------
+   DARK-MODE NEUTRALIZATION
+   ---------------------------------------------------------------------
+   Gradio applies a `.dark` class to the document root when the viewer's
+   OS/browser prefers dark mode, and re-scopes its CSS custom properties
+   under `:root.dark, :root .dark` (confirmed by inspecting the theme's
+   generated CSS directly). Setting dark-mode colours via the Python
+   Theme.set(..._dark=...) API did not reliably reach every component
+   (verified: card/group panel backgrounds stayed dark while directly
+   CSS-targeted elements like the status textbox correctly stayed light
+   in both modes). To guarantee a single, deterministic appearance
+   regardless of the viewer's system preference, every themeable colour
+   variable Gradio exposes is forced here directly, under the same
+   selector Gradio itself uses, so there is no dependency on how the
+   Python-level theme API maps onto individual components. This is a
+   professional reporting tool; its appearance should not vary by
+   reviewer's OS setting.
+   --------------------------------------------------------------------- */
+:root, :root.dark, :root .dark {{
+    --body-background-fill: {PAGE_BG};
+    --background-fill-primary: {CARD_BG};
+    --background-fill-secondary: {PAGE_BG};
+    --block-background-fill: {CARD_BG};
+    --block-border-color: {BORDER};
+    --block-label-background-fill: {CARD_BG};
+    --block-label-border-color: {BORDER};
+    --block-label-text-color: {INK_SOFT};
+    --block-title-background-fill: transparent;
+    --block-title-border-color: transparent;
+    --block-title-text-color: {NAVY};
+    --body-text-color: {INK};
+    --body-text-color-subdued: {INK_SOFT};
+    --border-color-primary: {BORDER};
+    --border-color-accent: {GOLD};
+    --button-primary-background-fill: {NAVY};
+    --button-primary-background-fill-hover: {NAVY_DARK};
+    --button-primary-border-color: {NAVY};
+    --button-primary-text-color: #FFFFFF;
+    --button-secondary-background-fill: #FFFFFF;
+    --button-secondary-border-color: {GOLD};
+    --button-secondary-text-color: {NAVY};
+    --input-background-fill: #FFFFFF;
+    --input-border-color: {BORDER};
+    --input-border-color-focus: {NAVY};
+    --input-placeholder-color: {INK_SOFT};
+    --panel-background-fill: {PAGE_BG};
+    --panel-border-color: {BORDER};
+    --table-border-color: {BORDER};
+    --table-even-background-fill: {CARD_BG};
+    --table-odd-background-fill: #F7F9FB;
+    --table-text-color: {INK};
+    --link-text-color: {NAVY};
+    --link-text-color-hover: {NAVY_DARK};
+    --link-text-color-visited: {NAVY};
+    --link-text-color-active: {NAVY_DARK};
+    --checkbox-background-color: #FFFFFF;
+    --checkbox-border-color: {BORDER};
+    --checkbox-border-color-focus: {NAVY};
+    --checkbox-border-color-selected: {NAVY};
+    --checkbox-background-color-selected: {NAVY};
+    --checkbox-label-background-fill: #FFFFFF;
+    --checkbox-label-border-color: {BORDER};
+    --checkbox-label-text-color: {INK};
+    --code-background-fill: #F7F9FB;
+    --error-background-fill: #FBEAE9;
+    --error-border-color: #B3261E;
+    --error-text-color: #8C1D17;
+}}
+
 #gif-header-banner {{
     background: linear-gradient(135deg, {NAVY} 0%, {NAVY_DARK} 100%);
     border-radius: 16px;
@@ -197,33 +312,50 @@ CUSTOM_CSS = f"""
     border-radius: 14px !important;
 }}
 
-.gif-section-title {{
-    font-family: 'Source Serif 4', Georgia, serif;
+/* Gradio renders gr.Markdown content inside a nested `.prose` wrapper with
+   its own paragraph-level font-weight/colour rules, which otherwise
+   override styles set only on the outer `.gif-section-title` wrapper div.
+   Targeting the actual descendant tags directly, with !important, is what
+   makes the bold navy heading style actually take effect rather than being
+   silently overridden by Gradio's own markdown typography defaults. */
+.gif-section-title,
+.gif-section-title p,
+.gif-section-title span,
+.gif-section-title h1,
+.gif-section-title h2,
+.gif-section-title h3 {{
+    font-family: 'Source Serif 4', Georgia, serif !important;
     color: {NAVY} !important;
-    font-size: 15px;
-    font-weight: 700;
+    font-size: 17px !important;
+    font-weight: 800 !important;
+    margin: 0 !important;
+}}
+.gif-section-title {{
     border-bottom: 2px solid {GOLD};
-    padding-bottom: 6px;
-    margin-bottom: 10px !important;
-    display: inline-block;
+    padding: 2px 4px 8px 6px;
+    margin-bottom: 12px !important;
+    display: block;
 }}
 
-#gif-score-hero {{
+#gif-score-box {{
     text-align: center;
-    padding: 6px 0 2px 0;
+    border-radius: 14px;
+    border: 1.5px solid;
+    padding: 14px 10px 16px 10px;
 }}
-#gif-score-hero .gif-score-value {{
-    font-family: 'Source Serif 4', Georgia, serif;
-    font-size: 42px;
-    font-weight: 800;
-    line-height: 1.1;
-}}
-#gif-score-hero .gif-score-label {{
-    font-size: 12px;
+#gif-score-box .gif-score-label {{
+    font-size: 12.5px;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: {INK_SOFT};
-    margin-bottom: 2px;
+    color: {INK_SOFT} !important;
+    margin-bottom: 4px;
+}}
+#gif-score-box .gif-score-value {{
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 46px;
+    font-weight: 800;
+    line-height: 1.1;
 }}
 
 .gif-badge {{
@@ -235,9 +367,14 @@ CUSTOM_CSS = f"""
     border: 1.5px solid;
 }}
 
-#gif-status-box textarea {{
-    font-weight: 600;
-    color: {NAVY};
+#gif-status-box textarea,
+#gif-status-box textarea:disabled,
+#gif-status-box textarea[disabled] {{
+    background-color: #FFFFFF !important;
+    color: {NAVY} !important;
+    font-weight: 600 !important;
+    opacity: 1 !important;
+    -webkit-text-fill-color: {NAVY} !important;
 }}
 
 .gif-footer-note {{
@@ -358,20 +495,26 @@ def _friendly_error_message(exc: Exception) -> str:
 # ---------------------------------------------------------------------------
 
 def _format_score_badge(overall_score: float, classification: str) -> str:
-    """Render the overall score as a large, classification-coloured figure.
+    """Render the overall score inside a bordered, classification-tinted box.
+
+    Matches the visual treatment already used for the classification badge
+    (tinted background, coloured border) rather than plain coloured text,
+    so the score reads as an equally prominent focal point rather than
+    being visually secondary to the classification badge beside it.
 
     Args:
         overall_score: The overall weighted score (0-100).
         classification: The classification label, used to colour the
-            score figure consistently with the classification badge.
+            score box consistently with the classification badge.
 
     Returns:
         An HTML string (rendered inside a gr.HTML component) showing the
-        score prominently.
+        score prominently inside a coloured box.
     """
     colours = CLASSIFICATION_COLOURS.get(classification, _DEFAULT_CLASSIFICATION_COLOUR)
     return (
-        f'<div id="gif-score-hero">'
+        f'<div id="gif-score-box" style="background-color:{colours["bg"]}; '
+        f'border-color:{colours["border"]};">'
         f'<div class="gif-score-label">Overall Score</div>'
         f'<div class="gif-score-value" style="color:{colours["border"]};">'
         f"{overall_score:.2f}%</div></div>"
