@@ -56,7 +56,7 @@ from google.genai.errors import APIError, ClientError, ServerError  # type: igno
 # Centralized here so the model name has exactly one source of truth in this
 # module, and is easy to change if the project later moves to a different
 # Gemini model tier.
-GEMINI_MODEL_NAME = "gemini-3.5-flash"
+GEMINI_MODEL_NAME = "gemini-3.1-flash-lite"
 
 # Gemini calls can legitimately take a while for a long, context-heavy
 # evaluation prompt. A generous but finite timeout prevents the pipeline
